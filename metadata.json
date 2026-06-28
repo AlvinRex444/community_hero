@@ -1,0 +1,10 @@
+{
+  "name": "Community Hero",
+  "description": "A hyperlocal community problem solver where citizens report, verify, track, and collaborate to resolve neighborhood issues with AI assistance.",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
