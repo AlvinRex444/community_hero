@@ -102,7 +102,7 @@ interface Issue {
   id: string;
   title: string;
   description: string;
-  category: 'Roads & Potholes' | 'Water & Leakage' | 'Waste & Sanitation' | 'Streetlights' | 'Public Facilities' | 'Others';
+  category: string;
   urgency: 'Low' | 'Medium' | 'High' | 'Critical';
   status: 'Reported' | 'Verified' | 'In Progress' | 'Resolved';
   neighborhood: string;
@@ -119,6 +119,18 @@ interface Issue {
   comments: Comment[];
   estimatedDaysToResolve: number;
   aiAnalysis?: string;
+  aiConfidence?: number;
+  aiSummary?: string;
+  aiSafetyRecommendations?: string[];
+  aiVisionAnalysis?: {
+    detectedIssue: string;
+    confidence: number;
+    severity: string;
+    estimatedDimensions?: string;
+    potentialRisk: string;
+    suggestedAction: string;
+    checks: { label: string; checked: boolean }[];
+  };
   timeline: TimelineEvent[];
 }
 
@@ -544,6 +556,569 @@ let issues: Issue[] = [
   }
 ];
 
+interface FallbackTemplate {
+  category: string;
+  keywords: string[];
+  urgency: 'Low' | 'Medium' | 'High' | 'Critical';
+  estimatedDaysToResolve: number;
+  aiAnalysis: string;
+  aiConfidence: number;
+  aiSummary: string;
+  aiSafetyRecommendations: string[];
+  detectedIssue: string;
+  potentialRisk: string;
+  suggestedAction: string;
+  estimatedDimensions?: string;
+  checks: { label: string; checked: boolean }[];
+}
+
+const FALLBACK_TEMPLATES: FallbackTemplate[] = [
+  {
+    category: 'Roads & Potholes',
+    keywords: [],
+    urgency: 'High',
+    estimatedDaysToResolve: 3,
+    aiAnalysis: 'AI CLASSIFICATION: Severe road surface damage and pothole detected. High priority safety hazard. Action: Repair asphalt, Fill pothole, Inspect drainage. Municipal road repair team should patch the pavement within 48 hours.',
+    aiConfidence: 96.5,
+    aiSummary: 'Severe road surface damage and deep pothole detected, presenting active risk of vehicle damage and swerving accidents.',
+    aiSafetyRecommendations: [
+      'Reduce vehicle speed immediately in the affected lane.',
+      'Avoid the damaged lane during low-visibility conditions or heavy rainfall.',
+      'Install temporary warning barricades or safety cones if available.',
+      'Report progressive deterioration to the local municipal road authority.'
+    ],
+    detectedIssue: 'Road Pothole & Surface Damage',
+    potentialRisk: 'Vehicle tire/suspension damage, wheel rim cracking, and high-speed swerving accidents.',
+    suggestedAction: 'Repair asphalt, Fill pothole, Inspect drainage',
+    estimatedDimensions: 'Diameter: ~1.2m, Depth: ~8in',
+    checks: [
+      { label: 'Pothole detected', checked: true },
+      { label: 'Road surface damaged', checked: true },
+      { label: 'Fallen tree', checked: false }
+    ]
+  },
+  {
+    category: 'Fallen Tree / Road Obstruction',
+    keywords: [],
+    urgency: 'Critical',
+    estimatedDaysToResolve: 1,
+    aiAnalysis: 'AI Classification: Fallen Tree / Road Obstruction. Storm-related vegetation collapse has blocked one traffic lane, reducing emergency vehicle accessibility and creating collision hazards. Priority dispatch of municipal tree removal services is recommended.',
+    aiConfidence: 98.2,
+    aiSummary: 'A fallen tree branch is obstructing one traffic lane, reducing road capacity and delaying emergency vehicle access.',
+    aiSafetyRecommendations: [
+      'Avoid the blocked lane and slow down on approach.',
+      'Place warning barricades or safety signs to alert oncoming traffic.',
+      'Redirect traffic or use alternative routes if complete blockage occurs.',
+      'Keep pedestrians away from unstable branches or hanging limbs.',
+      'Municipal tree removal team should respond immediately.'
+    ],
+    detectedIssue: 'Fallen Tree Obstruction',
+    potentialRisk: 'Traffic congestion, head-on vehicle collisions, delayed emergency response, and pedestrian injury.',
+    suggestedAction: 'Dispatch tree removal crew, Inspect nearby trees, Clear roadway',
+    estimatedDimensions: 'Branch length: ~5m, Obstruction width: ~3m',
+    checks: [
+      { label: 'Fallen tree detected', checked: true },
+      { label: 'Traffic lane blocked', checked: true },
+      { label: 'Vegetation obstruction', checked: true },
+      { label: 'Road surface damage', checked: false }
+    ]
+  },
+  {
+    category: 'Water Leakage',
+    keywords: [],
+    urgency: 'High',
+    estimatedDaysToResolve: 2,
+    aiAnalysis: 'AI CLASSIFICATION: Water main rupture with active gushing flow. High priority safety threat. Action: Close valve, Repair pipeline, Pressure inspection. Utility division dispatched to isolate the main pipe branch and perform repair.',
+    aiConfidence: 95.8,
+    aiSummary: 'Active pressurized water leak causing localized pooling, sidewalk flooding, and high volume clean water wastage.',
+    aiSafetyRecommendations: [
+      'Do not step into pooling water due to unseen sub-base erosion and sinkhole risks.',
+      'Notify the local water utility authority to isolate the burst joint.',
+      'Divert pedestrian and light vehicle traffic away from the active flow.',
+      'Property owners nearby should monitor basements for seepage.'
+    ],
+    detectedIssue: 'Water Main Joint Rupture',
+    potentialRisk: 'Sub-surface soil washouts, street flooding, localized sinkholes, and utility pressure drop.',
+    suggestedAction: 'Close valve, Repair pipeline, Pressure inspection',
+    estimatedDimensions: 'Water volume flow: ~15-20 GPM',
+    checks: [
+      { label: 'Water main leak detected', checked: true },
+      { label: 'Active water pooling', checked: true },
+      { label: 'Sub-surface flooding', checked: true },
+      { label: 'Road surface damage', checked: false }
+    ]
+  },
+  {
+    category: 'Streetlight Failure',
+    keywords: [],
+    urgency: 'Medium',
+    estimatedDaysToResolve: 3,
+    aiAnalysis: 'AI CLASSIFICATION: Streetlight illumination failure. Safety threat due to dark spots. Action: Replace lamp, Electrical inspection. Municipal maintenance team scheduled for bulb and ballast replacement.',
+    aiConfidence: 94.1,
+    aiSummary: 'Unlit streetlight fixture creating localized dark zones, reducing security, and elevating risk for pedestrians near crossings.',
+    aiSafetyRecommendations: [
+      'Pedestrians must wear reflective clothing or carry a light source.',
+      'Drivers must exercise high caution, reduce speed, and use high-beams safely.',
+      'Initiate urgent bulb and photo-sensor circuit testing.',
+      'Report dark-zone extensions to civic security patrols.'
+    ],
+    detectedIssue: 'Unlit Lamp Post / Circuit Failure',
+    potentialRisk: 'Pedestrian accidents, vehicle collision at crossing zones, and increase in local security risks.',
+    suggestedAction: 'Replace lamp, Electrical inspection',
+    estimatedDimensions: undefined,
+    checks: [
+      { label: 'Unlit lamp post', checked: true },
+      { label: 'Dark zone verified', checked: true },
+      { label: 'Exposed live wiring', checked: false },
+      { label: 'Road surface damage', checked: false }
+    ]
+  },
+  {
+    category: 'Waste Management',
+    keywords: [],
+    urgency: 'Medium',
+    estimatedDaysToResolve: 4,
+    aiAnalysis: 'AI CLASSIFICATION: Illicit solid waste accumulation and illegal dumping. Action: Deploy sanitation team, Increase collection frequency. Solid waste management crew dispatched to load, haul, and spray eco-disinfectant over the site.',
+    aiConfidence: 93.5,
+    aiSummary: 'Accumulation of uncollected trash and illicit solid waste dumping, creating sanitation hazards and blocking pathways.',
+    aiSafetyRecommendations: [
+      'Do not handle or touch hazardous waste or chemical containers directly.',
+      'Keep pets and children away from the accumulated debris.',
+      'Report any toxic or organic odor emissions to environmental protection.',
+      'Place warning signs to discourage further illegal dumping.'
+    ],
+    detectedIssue: 'Illicit Solid Waste Dumping',
+    potentialRisk: 'Pest attraction, rodent infestation, biological/environmental contamination, and pathway blockade.',
+    suggestedAction: 'Deploy sanitation team, Increase collection frequency',
+    estimatedDimensions: 'Approximate waste pile volume: ~3 cubic meters',
+    checks: [
+      { label: 'Garbage accumulation', checked: true },
+      { label: 'Overflowing waste', checked: true },
+      { label: 'Road surface damage', checked: false }
+    ]
+  },
+  {
+    category: 'Flooding / Waterlogging',
+    keywords: [],
+    urgency: 'Critical',
+    estimatedDaysToResolve: 2,
+    aiAnalysis: 'AI CLASSIFICATION: Street waterlogging and storm drainage failure. Severe transit disruption. Action: Clear catch basins, Deploy emergency water pumps. Sanitation/drainage department must clear catch basins and deploy pump units.',
+    aiConfidence: 97.0,
+    aiSummary: 'Severe stormwater accumulation and waterlogging on road surface due to blocked catch basins, restricting transit.',
+    aiSafetyRecommendations: [
+      'Do not attempt to drive or wade through deep pooled water.',
+      'Be aware of open drainage grates submerged under the water surface.',
+      'Divert vehicle traffic to higher ground or alternate arterial routes.',
+      'Property owners in low-lying zones should deploy sandbags.'
+    ],
+    detectedIssue: 'Severe Street Waterlogging',
+    potentialRisk: 'Vehicle engine hydro-locking, pedestrian falls into hidden drains, and basement flooding.',
+    suggestedAction: 'Clear catch basins, Deploy emergency water pumps',
+    estimatedDimensions: 'Water depth: ~12 inches',
+    checks: [
+      { label: 'Flooding detected', checked: true },
+      { label: 'Waterlogged street', checked: true },
+      { label: 'Submerged sidewalk', checked: true },
+      { label: 'Fallen tree', checked: false }
+    ]
+  },
+  {
+    category: 'Open Manhole',
+    keywords: [],
+    urgency: 'Critical',
+    estimatedDaysToResolve: 1,
+    aiAnalysis: 'AI CLASSIFICATION: Lethal open manhole hazard. Action: Install heavy-duty safety cover, Dispatch sewer lid replacement crew. Municipal repair team must replace the cast-iron cover within 4 hours.',
+    aiConfidence: 99.1,
+    aiSummary: 'Extremely dangerous open sewer/storm manhole missing its cover, presenting a lethal falling hazard for pedestrians and vehicles.',
+    aiSafetyRecommendations: [
+      'Maintain a safe distance and do not walk near the opening.',
+      'If safe to do so, place a tall warning object (like a branch or cone) near the edge.',
+      'Avoid this route entirely under dark or low-visibility conditions.',
+      'Notify emergency public works department immediately.'
+    ],
+    detectedIssue: 'Missing Manhole Cover',
+    potentialRisk: 'Fatal or severe pedestrian falls, vehicle tire destruction, sewer gas emission, and structural sewer damage.',
+    suggestedAction: 'Install heavy-duty safety cover, Dispatch sewer lid replacement crew',
+    estimatedDimensions: 'Opening diameter: ~24 inches, Drop depth: ~15 feet',
+    checks: [
+      { label: 'Open manhole detected', checked: true },
+      { label: 'Missing sewer cover', checked: true },
+      { label: 'Warning barrier absent', checked: true },
+      { label: 'Road surface damage', checked: false }
+    ]
+  },
+  {
+    category: 'Electrical Hazard',
+    keywords: [],
+    urgency: 'Critical',
+    estimatedDaysToResolve: 1,
+    aiAnalysis: 'AI CLASSIFICATION: Dangerous live electrical exposure. Critical electrocution risk. Action: Coordinate power utility grid isolation, Dispatch high-voltage technicians. Power utility crew must cut power to the segment, isolate live lines, and repair/splice wire shielding immediately.',
+    aiConfidence: 98.9,
+    aiSummary: 'Exposed live electrical wiring or sagging utility lines presenting extreme shock and fire hazards to the public.',
+    aiSafetyRecommendations: [
+      'Stay at least 10 meters (33 feet) away from the exposed wires or poles.',
+      'Never touch any metal fences, pools of water, or vehicles in contact with the wires.',
+      'Keep children and pets inside and secure the immediate area.',
+      'Call the electrical power utility emergency hotline immediately.'
+    ],
+    detectedIssue: 'Exposed Live Electrical Wiring',
+    potentialRisk: 'Lethal electric shock, electrical fire ignition, power grid outages, and structural utility damage.',
+    suggestedAction: 'Coordinate power utility grid isolation, Dispatch high-voltage technicians',
+    estimatedDimensions: 'Pole leaning angle: ~15 degrees',
+    checks: [
+      { label: 'Exposed live wiring', checked: true },
+      { label: 'Sagging utility lines', checked: true },
+      { label: 'Electrical sparks', checked: false },
+      { label: 'Road surface damage', checked: false }
+    ]
+  },
+  {
+    category: 'Generic Infrastructure Issue',
+    keywords: [],
+    urgency: 'Medium',
+    estimatedDaysToResolve: 5,
+    aiAnalysis: 'AI CLASSIFICATION: Generic municipal infrastructure issue. Review pending. Action: Schedule civil engineering inspector to assess the public structure. Civic inspector scheduled to visit and route to appropriate department.',
+    aiConfidence: 92.0,
+    aiSummary: 'Unclassified public infrastructure defect reported, requiring inspection and schedule routing by civic maintenance.',
+    aiSafetyRecommendations: [
+      'Exercise high caution when navigating in the immediate vicinity.',
+      'Avoid touching damaged structures, cracked concrete, or loose fittings.',
+      'Report any progressive structural changes or hazards to the authorities.',
+      'Allow certified technicians to inspect and secure the perimeter.'
+    ],
+    detectedIssue: 'Public Infrastructure Defect',
+    potentialRisk: 'General safety concerns, minor physical injuries, community navigation delays, and aesthetic degradation.',
+    suggestedAction: 'Schedule civil engineering inspector to assess the public structure',
+    estimatedDimensions: undefined,
+    checks: [
+      { label: 'Physical damage visible', checked: true },
+      { label: 'Safety perimeter absent', checked: true },
+      { label: 'Active public hazard', checked: true },
+      { label: 'Road surface damage', checked: false }
+    ]
+  }
+];
+
+function classifyCategory(description: string, title: string = '', userSuggestedCategory: string = ''): string {
+  const textToAnalyze = `${title} ${description}`.toLowerCase();
+  const scores: Record<string, number> = {
+    'Roads & Potholes': 0,
+    'Fallen Tree / Road Obstruction': 0,
+    'Water Leakage': 0,
+    'Streetlight Failure': 0,
+    'Waste Management': 0,
+    'Flooding / Waterlogging': 0,
+    'Open Manhole': 0,
+    'Electrical Hazard': 0,
+    'Generic Infrastructure Issue': 0
+  };
+
+  // Heavy weight boost if the user suggested category explicitly matches or aligns
+  if (userSuggestedCategory) {
+    const sug = userSuggestedCategory.trim().toLowerCase();
+    for (const cat of Object.keys(scores)) {
+      if (
+        cat.toLowerCase() === sug || 
+        cat.toLowerCase().replace(/\s+/g, '').includes(sug.replace(/\s+/g, '')) || 
+        sug.replace(/\s+/g, '').includes(cat.toLowerCase().replace(/\s+/g, ''))
+      ) {
+        scores[cat] += 25;
+      }
+    }
+  }
+
+  // Define weighted classification keywords
+  const weights: Record<string, Record<string, number>> = {
+    'Roads & Potholes': {
+      'pothole': 15,
+      'potholes': 15,
+      'road crack': 12,
+      'cracked asphalt': 12,
+      'surface damage': 10,
+      'road damage': 10,
+      'sinkhole': 12,
+      'sinkholes': 12,
+      'broken pavement': 10,
+      'crater': 10,
+      'craters': 10,
+      'asphalt': 8,
+      'pavement': 8,
+      'paving': 8,
+      'paved': 6,
+      'bump': 6,
+      'bumpy': 6,
+      'crack': 6,
+      'cracks': 6,
+      'pothole detected': 15,
+      'damaged road': 8,
+      'road': 1,
+      'street': 1,
+      'lane': 1
+    },
+    'Fallen Tree / Road Obstruction': {
+      'tree': 15,
+      'trees': 12,
+      'branch': 15,
+      'branches': 12,
+      'fallen': 10,
+      'obstruction': 10,
+      'blocked': 8,
+      'blockage': 8,
+      'storm': 8,
+      'roadblock': 12,
+      'collapsed tree': 15,
+      'fallen trunk': 15,
+      'debris': 8,
+      'limb': 10,
+      'limbs': 10,
+      'wood': 6,
+      'log': 10,
+      'shrub': 8,
+      'blocking': 8,
+      'fallen tree': 15,
+      'fallen branch': 15,
+      'obstructing': 10
+    },
+    'Water Leakage': {
+      'pipe': 12,
+      'pipes': 10,
+      'water leak': 15,
+      'burst pipe': 15,
+      'water flowing': 12,
+      'pipeline': 12,
+      'hydrant': 15,
+      'gush': 10,
+      'gushing': 12,
+      'leakage': 12,
+      'leaking': 12,
+      'leak': 10,
+      'water main': 15,
+      'leaking pipe': 15,
+      'sprinkler': 8,
+      'water run': 6,
+      'flowing water': 10
+    },
+    'Streetlight Failure': {
+      'streetlight': 15,
+      'streetlights': 15,
+      'lamp': 12,
+      'lamps': 10,
+      'pole light': 15,
+      'dark road': 12,
+      'lighting': 10,
+      'darkness': 8,
+      'unlit': 12,
+      'bulb': 12,
+      'bulbs': 10,
+      'blackout': 10,
+      'light post': 15,
+      'lamp post': 15,
+      'broken light': 10,
+      'no light': 10,
+      'lights out': 12
+    },
+    'Waste Management': {
+      'garbage': 15,
+      'trash': 15,
+      'waste': 12,
+      'dump': 12,
+      'dumped': 10,
+      'dumping': 12,
+      'overflowing bin': 15,
+      'bin': 10,
+      'bins': 10,
+      'rubbish': 12,
+      'refuse': 12,
+      'litter': 12,
+      'odor': 8,
+      'smell': 8,
+      'stench': 8,
+      'sanitation': 10,
+      'waste pile': 12,
+      'trash pile': 12
+    },
+    'Flooding / Waterlogging': {
+      'flood': 15,
+      'flooding': 15,
+      'waterlogging': 15,
+      'waterlogged': 15,
+      'pooled water': 12,
+      'stormwater': 12,
+      'standing water': 12,
+      'rainwater': 10,
+      'drain blocked': 15,
+      'submerged road': 15,
+      'submerged': 12,
+      'deluge': 12,
+      'overflow': 10,
+      'inundated': 12,
+      'puddle': 8,
+      'puddles': 8,
+      'pooling': 8,
+      'clogged drain': 12,
+      'sewer overflow': 12
+    },
+    'Open Manhole': {
+      'manhole': 15,
+      'manholes': 12,
+      'cover missing': 15,
+      'missing cover': 15,
+      'drain cover': 12,
+      'open sewer': 15,
+      'sewer cover': 15,
+      'uncovered manhole': 15,
+      'lid missing': 15,
+      'missing lid': 15,
+      'deep hole': 10,
+      'pit': 10,
+      'open drain': 12
+    },
+    'Electrical Hazard': {
+      'electric pole': 15,
+      'wire': 12,
+      'wires': 12,
+      'power line': 15,
+      'power lines': 15,
+      'electric shock': 15,
+      'transformer': 15,
+      'sparks': 12,
+      'sparking': 15,
+      'live wire': 15,
+      'live wires': 15,
+      'conduit': 10,
+      'high voltage': 15,
+      'cables': 10,
+      'cable': 8,
+      'exposed wiring': 15,
+      'exposed electrical': 15,
+      'hanging wire': 12,
+      'downed line': 15
+    },
+    'Generic Infrastructure Issue': {
+      'public facilities': 5,
+      'bench': 8,
+      'park': 8,
+      'playground': 8,
+      'sidewalk': 8,
+      'others': 5,
+      'generic': 5,
+      'infrastructure': 5,
+      'sign': 6,
+      'signpost': 6,
+      'fence': 6,
+      'railing': 8,
+      'cracked concrete': 8,
+      'broken bench': 10
+    }
+  };
+
+  // Sum up score matching
+  for (const [category, keywordsMap] of Object.entries(weights)) {
+    for (const [keyword, weight] of Object.entries(keywordsMap)) {
+      if (keyword.includes(' ')) {
+        if (textToAnalyze.includes(keyword)) {
+          scores[category] += weight;
+        }
+      } else {
+        const regex = new RegExp(`\\b${keyword}\\b`, 'g');
+        const matches = textToAnalyze.match(regex);
+        if (matches) {
+          scores[category] += weight * matches.length;
+        }
+      }
+    }
+  }
+
+  console.log('Fallback weighted classifier scores:', scores);
+
+  let bestCategory = 'Generic Infrastructure Issue';
+  let maxScore = -1;
+
+  for (const [category, score] of Object.entries(scores)) {
+    if (score > maxScore) {
+      maxScore = score;
+      bestCategory = category;
+    }
+  }
+
+  if (maxScore <= 0) {
+    return 'Generic Infrastructure Issue';
+  }
+
+  return bestCategory;
+}
+
+function findTemplate(category: string, description: string = '', useKeywordFallback: boolean = true): FallbackTemplate {
+  const cleanCat = (category || '').trim().toLowerCase();
+
+  // 1. Try to find direct match by category name
+  const matched = FALLBACK_TEMPLATES.find(t => t.category.toLowerCase() === cleanCat);
+  if (matched) return matched;
+
+  // 2. Try normalized matching
+  const normalizedCat = cleanCat.replace(/[^a-z0-9]/g, '');
+  const matchedNormalized = FALLBACK_TEMPLATES.find(t => t.category.toLowerCase().replace(/[^a-z0-9]/g, '') === normalizedCat);
+  if (matchedNormalized) return matchedNormalized;
+
+  // 3. Fallback to weighted classification if keyword fallback is allowed
+  if (useKeywordFallback) {
+    const classifiedCategory = classifyCategory(description, '', category);
+    const matchedClassified = FALLBACK_TEMPLATES.find(t => t.category === classifiedCategory);
+    if (matchedClassified) return matchedClassified;
+  }
+
+  // 4. Default to Generic Infrastructure Issue
+  return FALLBACK_TEMPLATES.find(t => t.category === 'Generic Infrastructure Issue') || FALLBACK_TEMPLATES[FALLBACK_TEMPLATES.length - 1];
+}
+
+function enrichIssueWithAIFields(issue: Issue, isGeminiSuccess: boolean = false): Issue {
+  // If Gemini succeeded, or if we are loading seed data, bypass keyword classification fallback completely
+  const hasValidPredefinedCategory = isGeminiSuccess;
+  const template = findTemplate(issue.category, issue.description, !hasValidPredefinedCategory);
+
+  if (!issue.aiConfidence) {
+    issue.aiConfidence = template.aiConfidence;
+  }
+
+  if (!issue.aiSummary) {
+    const street = issue.location && issue.location.address ? issue.location.address.split(',')[0] : 'reported location';
+    issue.aiSummary = template.aiSummary.replace(/on Kalyanpur, Kanpur|near Kalyanpur, Kanpur/gi, `on ${street}`);
+  }
+
+  if (!issue.aiSafetyRecommendations || issue.aiSafetyRecommendations.length === 0) {
+    issue.aiSafetyRecommendations = [...template.aiSafetyRecommendations];
+  }
+
+  if (!issue.aiAnalysis) {
+    issue.aiAnalysis = template.aiAnalysis;
+  }
+
+  if (!issue.aiVisionAnalysis && issue.imageUrl) {
+    const descLower = (issue.description || '').toLowerCase();
+    const checks = template.checks.map(chk => {
+      let checked = chk.checked;
+      if (chk.label === 'Standing water detected') {
+        checked = descLower.includes('water') || descLower.includes('rain') || descLower.includes('puddle') || descLower.includes('flood');
+      } else if (chk.label === 'Exposed live wiring') {
+        checked = descLower.includes('wire') || descLower.includes('live') || descLower.includes('exposed') || descLower.includes('spark');
+      }
+      return { label: chk.label, checked };
+    });
+
+    issue.aiVisionAnalysis = {
+      detectedIssue: template.detectedIssue,
+      confidence: issue.aiConfidence || template.aiConfidence,
+      severity: issue.urgency || template.urgency,
+      estimatedDimensions: template.estimatedDimensions,
+      potentialRisk: template.potentialRisk,
+      suggestedAction: template.suggestedAction,
+      checks
+    };
+  }
+
+  return issue;
+}
+
 // Dynamically translate all seeded issues to center on Kalyanpur, Kanpur under "Live GPS Location"
 const OLD_CENTER_LAT = 37.7749;
 const OLD_CENTER_LNG = -122.4194;
@@ -573,7 +1148,7 @@ issues = issues.map(issue => {
   newAddress = newAddress.replace(/Pine Road/gi, 'G T Road');
   newAddress = newAddress.replace(/Broadway Plaza/gi, 'Sharda Nagar Rd');
 
-  return {
+  const updated = {
     ...issue,
     neighborhood: 'Live GPS Location',
     location: {
@@ -583,6 +1158,8 @@ issues = issues.map(issue => {
       address: newAddress
     }
   };
+
+  return enrichIssueWithAIFields(updated, true);
 });
 
 // Helper to calculate statistics filtered by neighborhood
@@ -882,10 +1459,14 @@ app.post('/api/issues', async (req, res) => {
 
     // Default values if AI fails or isn't configured
     let finalTitle = title || 'Community Issue Report';
-    let finalCategory = category || 'Others';
+    let finalCategory = category || 'Generic Infrastructure Issue';
     let finalUrgency = urgency || 'Medium';
     let finalEstimatedDays = 5;
     let finalAiAnalysis = 'AI Classification: Standard Issue. Initial review pending municipal dispatch.';
+    let finalAiConfidence: number | undefined = undefined;
+    let finalAiSummary: string | undefined = undefined;
+    let finalAiSafetyRecommendations: string[] | undefined = undefined;
+    let isGeminiSuccess = false;
 
     // If Gemini SDK is available and not throttled, perform rich analysis
     const now = Date.now();
@@ -902,10 +1483,13 @@ app.post('/api/issues', async (req, res) => {
         
         Provide:
         1. A refined, professional, and clear Title (max 10 words).
-        2. Category, which must be EXACTLY one of: "Roads & Potholes", "Water & Leakage", "Waste & Sanitation", "Streetlights", "Public Facilities", "Others".
+        2. Category, which must be EXACTLY one of: "Roads & Potholes", "Fallen Tree / Road Obstruction", "Water Leakage", "Streetlight Failure", "Waste Management", "Flooding / Waterlogging", "Open Manhole", "Electrical Hazard", "Generic Infrastructure Issue".
         3. Urgency, which must be EXACTLY one of: "Low", "Medium", "High", "Critical".
         4. Estimated resolution time (in days, as an integer).
-        5. A comprehensive safety recommendation and technical analysis (max 100 words). Starts with "AI CLASSIFICATION: ..."`;
+        5. A comprehensive safety recommendation and technical analysis (max 100 words). Starts with "AI CLASSIFICATION: ...".
+        6. AI classification confidence percentage (float/number between 0 and 100, e.g. 98.4).
+        7. A clear, human-like generated summary of the hazard context and risks (max 40 words).
+        8. A list of 3-4 highly actionable safety recommendations/precautions for citizens.`;
 
         let contentsPayload: any = { parts: [{ text: promptText }] };
 
@@ -943,12 +1527,22 @@ app.post('/api/issues', async (req, res) => {
               type: Type.OBJECT,
               properties: {
                 title: { type: Type.STRING, description: 'Refined short title' },
-                category: { type: Type.STRING, description: 'Exact matching category string' },
+                category: { 
+                  type: Type.STRING, 
+                  description: 'Exact matching category string, must be one of: "Roads & Potholes", "Fallen Tree / Road Obstruction", "Water Leakage", "Streetlight Failure", "Waste Management", "Flooding / Waterlogging", "Open Manhole", "Electrical Hazard", "Generic Infrastructure Issue"' 
+                },
                 urgency: { type: Type.STRING, description: 'Exact matching urgency level' },
                 estimatedDaysToResolve: { type: Type.INTEGER, description: 'Typical resolution days' },
-                aiAnalysis: { type: Type.STRING, description: 'Analysis and safety precautions, max 100 words' }
+                aiAnalysis: { type: Type.STRING, description: 'Analysis and safety precautions, max 100 words' },
+                aiConfidence: { type: Type.NUMBER, description: 'Classification confidence percentage from 0 to 100 (e.g. 98.4)' },
+                aiSummary: { type: Type.STRING, description: 'Concise summary of the hazard and risk context, max 40 words' },
+                aiSafetyRecommendations: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                  description: 'List of 3-4 actionable safety bullet points'
+                }
               },
-              required: ['title', 'category', 'urgency', 'estimatedDaysToResolve', 'aiAnalysis']
+              required: ['title', 'category', 'urgency', 'estimatedDaysToResolve', 'aiAnalysis', 'aiConfidence', 'aiSummary', 'aiSafetyRecommendations']
             }
           }
         });
@@ -963,37 +1557,43 @@ app.post('/api/issues', async (req, res) => {
           if (parsed.urgency) finalUrgency = parsed.urgency;
           if (parsed.estimatedDaysToResolve) finalEstimatedDays = parsed.estimatedDaysToResolve;
           if (parsed.aiAnalysis) finalAiAnalysis = parsed.aiAnalysis;
+          if (parsed.aiConfidence) finalAiConfidence = Number(parsed.aiConfidence);
+          if (parsed.aiSummary) finalAiSummary = parsed.aiSummary;
+          if (parsed.aiSafetyRecommendations) finalAiSafetyRecommendations = parsed.aiSafetyRecommendations;
+          isGeminiSuccess = true;
         }
       } catch (aiErr) {
         console.warn('Gemini API analysis failed. Falling back to default heuristics.');
         handleGeminiError(aiErr);
-        // Basic heuristics if AI fails
-        const descLower = description.toLowerCase();
-        if (descLower.includes('pothole') || descLower.includes('road') || descLower.includes('pavement')) {
-          finalCategory = 'Roads & Potholes';
-          finalUrgency = 'High';
-        } else if (descLower.includes('water') || descLower.includes('leak') || descLower.includes('flood') || descLower.includes('pipe')) {
-          finalCategory = 'Water & Leakage';
-          finalUrgency = descLower.includes('burst') || descLower.includes('gush') ? 'Critical' : 'Medium';
-        } else if (descLower.includes('garbage') || descLower.includes('waste') || descLower.includes('dump') || descLower.includes('sanitation')) {
-          finalCategory = 'Waste & Sanitation';
-        } else if (descLower.includes('light') || descLower.includes('lamp') || descLower.includes('bulb') || descLower.includes('dark')) {
-          finalCategory = 'Streetlights';
-        } else if (descLower.includes('park') || descLower.includes('playground') || descLower.includes('bench') || descLower.includes('sidewalk')) {
-          finalCategory = 'Public Facilities';
-        }
+        isGeminiSuccess = false;
+        
+        // Use intelligent template fallback
+        const classifiedCategory = classifyCategory(description, title, category);
+        const matchedTemplate = findTemplate(classifiedCategory, description, false);
+        finalTitle = title || `${matchedTemplate.category} Report`;
+        finalCategory = matchedTemplate.category;
+        finalUrgency = urgency || matchedTemplate.urgency;
+        finalEstimatedDays = matchedTemplate.estimatedDaysToResolve;
+        finalAiAnalysis = matchedTemplate.aiAnalysis;
+        finalAiConfidence = matchedTemplate.aiConfidence;
+        finalAiSummary = matchedTemplate.aiSummary;
+        finalAiSafetyRecommendations = [...matchedTemplate.aiSafetyRecommendations];
       }
     } else {
       console.log('Gemini API not available. Utilizing standard rule heuristics.');
-      // Rule based heuristics
-      const descLower = description.toLowerCase();
-      if (descLower.includes('pothole') || descLower.includes('road') || descLower.includes('street')) {
-        finalCategory = 'Roads & Potholes';
-        finalUrgency = 'High';
-      } else if (descLower.includes('leak') || descLower.includes('pipe') || descLower.includes('water')) {
-        finalCategory = 'Water & Leakage';
-        finalUrgency = 'Critical';
-      }
+      isGeminiSuccess = false;
+      
+      // Use intelligent template fallback
+      const classifiedCategory = classifyCategory(description, title, category);
+      const matchedTemplate = findTemplate(classifiedCategory, description, false);
+      finalTitle = title || `${matchedTemplate.category} Report`;
+      finalCategory = matchedTemplate.category;
+      finalUrgency = urgency || matchedTemplate.urgency;
+      finalEstimatedDays = matchedTemplate.estimatedDaysToResolve;
+      finalAiAnalysis = matchedTemplate.aiAnalysis;
+      finalAiConfidence = matchedTemplate.aiConfidence;
+      finalAiSummary = matchedTemplate.aiSummary;
+      finalAiSafetyRecommendations = [...matchedTemplate.aiSafetyRecommendations];
     }
 
     // Generate random lat/lng nearby the appropriate district center if coordinates are empty
@@ -1033,6 +1633,9 @@ app.post('/api/issues', async (req, res) => {
       imageUrl: imageUrl || 'https://images.unsplash.com/photo-1584467541268-b040f83be3fd?auto=format&fit=crop&q=80&w=800',
       estimatedDaysToResolve: finalEstimatedDays,
       aiAnalysis: finalAiAnalysis,
+      aiConfidence: finalAiConfidence,
+      aiSummary: finalAiSummary,
+      aiSafetyRecommendations: finalAiSafetyRecommendations,
       timeline: [
         {
           status: 'Reported',
@@ -1043,8 +1646,9 @@ app.post('/api/issues', async (req, res) => {
       comments: []
     };
 
-    issues.unshift(newIssue); // Put it at the top of the list
-    res.status(201).json(newIssue);
+    const enriched = enrichIssueWithAIFields(newIssue, isGeminiSuccess);
+    issues.unshift(enriched); // Put it at the top of the list
+    res.status(201).json(enriched);
   } catch (err: any) {
     console.error('Error creating issue:', err);
     res.status(500).json({ error: 'Failed to report community issue.' });

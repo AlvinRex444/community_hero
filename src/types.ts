@@ -20,7 +20,7 @@ export interface Issue {
   id: string;
   title: string;
   description: string;
-  category: 'Roads & Potholes' | 'Water & Leakage' | 'Waste & Sanitation' | 'Streetlights' | 'Public Facilities' | 'Others';
+  category: string;
   urgency: 'Low' | 'Medium' | 'High' | 'Critical';
   status: 'Reported' | 'Verified' | 'In Progress' | 'Resolved';
   neighborhood: string;
@@ -37,6 +37,18 @@ export interface Issue {
   comments: Comment[];
   estimatedDaysToResolve: number;
   aiAnalysis?: string;
+  aiConfidence?: number;
+  aiSummary?: string;
+  aiSafetyRecommendations?: string[];
+  aiVisionAnalysis?: {
+    detectedIssue: string;
+    confidence: number;
+    severity: string;
+    estimatedDimensions?: string;
+    potentialRisk: string;
+    suggestedAction: string;
+    checks: { label: string; checked: boolean }[];
+  };
   timeline: TimelineEvent[];
 }
 
