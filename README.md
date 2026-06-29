@@ -45,7 +45,7 @@ npm run dev
 
 This contains everything you need to run your app locally.
 
-View your app in AI Studio: https://ai.studio/apps/8da5c271-80b8-48f2-ae4f-a7624ba0fd1b
+View community-hero here: https://community-hero-253347013398.asia-southeast1.run.app
 
 ## Run Locally
 
