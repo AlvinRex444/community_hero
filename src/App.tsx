@@ -122,6 +122,7 @@ export default function App() {
   const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null);
   const [stats, setStats] = useState<NeighborhoodStats | null>(null);
   const [insights, setInsights] = useState<PredictiveInsight[]>([]);
+  const [isGeneratingInsights, setIsGeneratingInsights] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -415,6 +416,33 @@ export default function App() {
       }
     } catch (err) {
       console.error('Failed to fetch insights', err);
+    }
+  };
+
+  const handleRegenerateInsights = async () => {
+    setIsGeneratingInsights(true);
+    try {
+      const res = await fetch(`/api/insights?neighborhood=${selectedNeighborhood}&forceRefresh=true`);
+      
+      const isUnavailable = res.headers.get('X-Gemini-Unavailable') === 'true';
+      if (isUnavailable) {
+        triggerNotification('error', 'Gemini AI is temporarily unavailable. Showing the latest available community insights.');
+      } else {
+        triggerNotification('success', 'Successfully regenerated Predictive AI Insights!');
+      }
+
+      if (res.ok) {
+        const data = await res.json();
+        setInsights(data);
+      }
+      
+      // Automatically refresh the dashboard stats and issues
+      await Promise.all([fetchIssues(), fetchStats()]);
+    } catch (err) {
+      console.error('Failed to regenerate insights', err);
+      triggerNotification('error', 'Failed to regenerate insights. Please try again.');
+    } finally {
+      setIsGeneratingInsights(false);
     }
   };
 
@@ -1721,11 +1749,25 @@ export default function App() {
                     </p>
                   </div>
                   <button
-                    onClick={fetchInsights}
-                    className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold px-4 py-2 rounded-xl text-xs transition-all shadow-md flex items-center gap-2 shrink-0"
+                    onClick={handleRegenerateInsights}
+                    disabled={isGeneratingInsights}
+                    className={`text-slate-950 font-extrabold px-4 py-2 rounded-xl text-xs transition-all shadow-md flex items-center gap-2 shrink-0 ${
+                      isGeneratingInsights 
+                        ? 'bg-slate-700 text-slate-400 cursor-not-allowed opacity-75' 
+                        : 'bg-emerald-500 hover:bg-emerald-400'
+                    }`}
                   >
-                    <Sparkles className="w-4 h-4 text-slate-950" />
-                    Regenerate Insights
+                    {isGeneratingInsights ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+                        Analyzing Community Trends...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4 text-slate-950" />
+                        Regenerate Insights
+                      </>
+                    )}
                   </button>
                 </div>
 

@@ -1746,8 +1746,9 @@ app.post('/api/issues/:id/comments', (req, res) => {
 
 // 7. Get Predictive AI Insights and Neighborhood Health recommendations
 app.get('/api/insights', async (req, res) => {
-  const { neighborhood } = req.query;
+  const { neighborhood, forceRefresh } = req.query;
   const targetNeighborhood = (neighborhood as string) || 'All';
+  const isForceRefresh = forceRefresh === 'true';
 
   // Customized fallback insights depending on the neighborhood
   let defaultInsights = [
@@ -1854,16 +1855,17 @@ app.get('/api/insights', async (req, res) => {
   const now = Date.now();
 
   // 1. Check in-memory Cache first to prevent redundant API queries
-  if (insightsCache[targetNeighborhood] && (now - insightsCache[targetNeighborhood].timestamp < INSIGHTS_CACHE_TTL_MS)) {
+  if (!isForceRefresh && insightsCache[targetNeighborhood] && (now - insightsCache[targetNeighborhood].timestamp < INSIGHTS_CACHE_TTL_MS)) {
     console.log(`[Cache Hit] Returning cached insights for neighborhood: ${targetNeighborhood}`);
     return res.json(insightsCache[targetNeighborhood].data);
   }
 
   // 2. Check if the API is currently throttled due to rate limiting or quota exhaustion
-  if (isQuotaExhausted && now < quotaResetTime) {
+  if (!isForceRefresh && isQuotaExhausted && now < quotaResetTime) {
     console.log(`[AI Throttled] Gemini API is currently throttled to protect quota limits. Returning curated fallback insights.`);
+    res.setHeader('X-Gemini-Unavailable', 'true');
     return res.json(defaultInsights);
-  } else {
+  } else if (!isForceRefresh) {
     isQuotaExhausted = false; // Reset throttle flag
   }
 
@@ -1927,15 +1929,34 @@ app.get('/api/insights', async (req, res) => {
         return res.json(parsed);
       }
     } catch (err) {
-      console.warn('Gemini insights generation failed. Returning default curated predictions.');
+      console.warn('Gemini insights generation failed. Returning default curated predictions or newest cached insights.');
       handleGeminiError(err);
       
-      // Cache fallback results for 2 minutes to throttle API requests
-      insightsCache[targetNeighborhood] = {
-        data: defaultInsights,
-        timestamp: now - INSIGHTS_CACHE_TTL_MS + (2 * 60 * 1000) // Resets in 2 minutes
-      };
+      // Set header indicating Gemini is temporarily unavailable
+      res.setHeader('X-Gemini-Unavailable', 'true');
+
+      // Serve newest cached insights if available
+      if (insightsCache[targetNeighborhood]) {
+        console.log(`Serving newest cached insights for ${targetNeighborhood} due to Gemini API failure`);
+        return res.json(insightsCache[targetNeighborhood].data);
+      }
+
+      // Otherwise, save fallback results for 2 minutes (if not forceRefresh)
+      if (!isForceRefresh) {
+        insightsCache[targetNeighborhood] = {
+          data: defaultInsights,
+          timestamp: now - INSIGHTS_CACHE_TTL_MS + (2 * 60 * 1000) // Resets in 2 minutes
+        };
+      }
+      return res.json(defaultInsights);
     }
+  } else {
+    // If AI is not available
+    res.setHeader('X-Gemini-Unavailable', 'true');
+    if (insightsCache[targetNeighborhood]) {
+      return res.json(insightsCache[targetNeighborhood].data);
+    }
+    return res.json(defaultInsights);
   }
 
   // Fallback
